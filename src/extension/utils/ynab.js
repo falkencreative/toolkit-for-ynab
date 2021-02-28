@@ -13,8 +13,26 @@ export function getCurrentBudgetDate() {
   return { year: date.slice(0, 4), month: date.slice(4, 6) };
 }
 
+export function isCurrentRouteBudgetPage() {
+  const currentRoute = getCurrentRouteName();
+
+  return (
+    currentRoute === ynab.constants.RouteNames.BudgetSelect ||
+    currentRoute === ynab.constants.RouteNames.BudgetIndex
+  );
+}
+
+export function isCurrentRouteAccountsPage() {
+  const currentRoute = getCurrentRouteName();
+
+  return (
+    currentRoute === ynab.constants.RouteNames.AccountsSelect ||
+    currentRoute === ynab.constants.RouteNames.AccountsIndex
+  );
+}
+
 export function getCurrentRouteName() {
-  return controllerLookup('application').get('currentRouteName');
+  return controllerLookup('application').get('activeRoute');
 }
 
 export function getCategoriesViewModel() {
@@ -29,13 +47,22 @@ export function getBudgetViewModel() {
   return controllerLookup('application').get('budgetViewModel');
 }
 
+export function getSelectedMonth() {
+  const monthString = controllerLookup('application').get('monthString');
+  return ynab.utilities.DateWithoutTime.createFromString(monthString, 'YYYYMM');
+}
+
 export function getSidebarViewModel() {
   return controllerLookup('application').get('sidebarViewModel');
 }
 
+export function getApplicationService() {
+  return controllerLookup('application').get('applicationService');
+}
+
 export function isCurrentMonthSelected() {
-  const today = new ynab.utilities.DateWithoutTime();
-  const selectedMonth = getBudgetViewModel().get('month');
+  const today = ynab.utilities.DateWithoutTime.createForToday();
+  const selectedMonth = getSelectedMonth();
 
   if (selectedMonth) {
     return today.equalsByMonth(selectedMonth);
@@ -46,7 +73,6 @@ export function isCurrentMonthSelected() {
 
 export function isYNABReady() {
   return (
-    typeof Em !== 'undefined' &&
     typeof Ember !== 'undefined' &&
     typeof $ !== 'undefined' &&
     !$('.ember-view.is-loading').length &&

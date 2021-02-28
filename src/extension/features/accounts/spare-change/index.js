@@ -1,11 +1,15 @@
 import { Feature } from 'toolkit/extension/features/feature';
-import { getCurrentRouteName } from 'toolkit/extension/utils/ynab';
+import { isCurrentRouteAccountsPage } from 'toolkit/extension/utils/ynab';
 import { controllerLookup } from 'toolkit/extension/utils/ember';
+import { formatCurrency } from 'toolkit/extension/utils/currency';
 
 export class SpareChange extends Feature {
   selectedTransactions;
+
   currentlyRunning = false;
+
   applicationController = null;
+
   accountsController = null;
 
   injectCSS() {
@@ -13,7 +17,7 @@ export class SpareChange extends Feature {
   }
 
   shouldInvoke() {
-    return getCurrentRouteName().indexOf('account') > -1;
+    return isCurrentRouteAccountsPage();
   }
 
   // invoke has potential of being pretty processing heavy (needing to sort content, then update calculation for every row)
@@ -33,19 +37,23 @@ export class SpareChange extends Feature {
       this.accountsController = controllerLookup('accounts');
     }
 
-    Ember.run.debounce(this, function () {
-      this.accountsController.addObserver('areChecked', this, 'onYnabSelectionChanged');
+    Ember.run.debounce(
+      this,
+      function() {
+        this.accountsController.addObserver('areChecked', this, 'onYnabSelectionChanged');
 
-      if (getCurrentRouteName().indexOf('accounts') > -1) {
-        if (this.applicationController.get('selectedAccountId')) {
-          this.onYnabGridyBodyChanged();
-        } else {
-          this.removeHeader();
+        if (isCurrentRouteAccountsPage()) {
+          if (this.applicationController.get('selectedAccountId')) {
+            this.onYnabGridBodyChanged();
+          } else {
+            this.removeHeader();
+          }
         }
-      }
 
-      this.currentlyRunning = false;
-    }, 250);
+        this.currentlyRunning = false;
+      },
+      250
+    );
   }
 
   observe(changedNodes) {
@@ -59,8 +67,12 @@ export class SpareChange extends Feature {
   }
 
   setSelectedTransactions() {
-    let visibleTransactionDisplayItems = this.accountsController.get('visibleTransactionDisplayItems');
-    this.selectedTransactions = visibleTransactionDisplayItems.filter(i => i.isChecked && i.get('outflow'));
+    let visibleTransactionDisplayItems = this.accountsController.get(
+      'visibleTransactionDisplayItems'
+    );
+    this.selectedTransactions = visibleTransactionDisplayItems.filter(
+      i => i.isChecked && i.get('outflow')
+    );
   }
 
   getSelectedAccount() {
@@ -112,14 +124,14 @@ export class SpareChange extends Feature {
     $('.ynab-toolkit-accounts-header-balances-spare-change').remove();
 
     // build spare change div
-    let spareChangeDiv = $('<div />')
-      .addClass('ynab-toolkit-accounts-header-balances-spare-change');
+    let spareChangeDiv = $('<div />').addClass(
+      'ynab-toolkit-accounts-header-balances-spare-change'
+    );
     let spareChangeAmount = $('<span />').addClass('user-data');
-    let spareChangeTitle =
-      $('<div />')
-        .addClass('accounts-header-balances-label')
-        .attr('title', 'The selected items "spare change" when rounded up to the nearest dollar.')
-        .text('Spare Change');
+    let spareChangeTitle = $('<div />')
+      .addClass('accounts-header-balances-label')
+      .attr('title', 'The selected items "spare change" when rounded up to the nearest dollar.')
+      .text('Spare Change');
     let currencySpan = $('<span />').addClass('user-data currency');
 
     spareChangeAmount.append(currencySpan);
@@ -153,24 +165,28 @@ export class SpareChange extends Feature {
         currencySpan.addClass('zero');
       }
 
-      let formatted = ynabToolKit.shared.formatCurrency(spareChange);
-      spareChangeAmount.attr('title', formatted.string);
+      let formatted = formatCurrency(spareChange);
+      spareChangeAmount.attr('title', formatted);
 
-      let formattedHtml = formatted.string.replace(/\$/g, '<bdi>$</bdi>');
+      let formattedHtml = formatted.replace(/\$/g, '<bdi>$</bdi>');
       currencySpan.html(formattedHtml);
     }
   }
 
-  onYnabGridyBodyChanged() {
-    Ember.run.debounce(this, function () {
-      this.setSelectedTransactions();
-      this.updateSpareChangeCalculation();
-      this.updateSpareChangeHeader();
-    }, 250);
+  onYnabGridBodyChanged() {
+    Ember.run.debounce(
+      this,
+      function() {
+        this.setSelectedTransactions();
+        this.updateSpareChangeCalculation();
+        this.updateSpareChangeHeader();
+      },
+      250
+    );
   }
 
   onYnabSelectionChanged() {
     this.selectedTransactions = undefined;
-    this.onYnabGridyBodyChanged();
+    this.onYnabGridBodyChanged();
   }
 }

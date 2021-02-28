@@ -1,5 +1,6 @@
 import { Feature } from 'toolkit/extension/features/feature';
-import { getCurrentRouteName } from 'toolkit/extension/utils/ynab';
+import { isCurrentRouteAccountsPage } from 'toolkit/extension/utils/ynab';
+import { stripCurrency, formatCurrency } from 'toolkit/extension/utils/currency';
 
 const DISTRIBUTE_BUTTON_ID = 'toolkit-auto-distribute-splits-button';
 
@@ -22,7 +23,7 @@ export class AutoDistributeSplits extends Feature {
   }
 
   shouldInvoke() {
-    return getCurrentRouteName().includes('account');
+    return isCurrentRouteAccountsPage();
   }
 
   invoke() {
@@ -72,15 +73,13 @@ export class AutoDistributeSplits extends Feature {
       return;
     }
 
-    this.adjustValues(
-      subCells,
-      subValues.map(this.proportionalValue(total, remaining))
-    );
+    const newSubValues = this.getUpdatedSubValues(subValues, total, remaining);
+    this.adjustValues(subCells, newSubValues);
   }
 
   getCellsAndValues() {
     const cells = $('.is-editing .ynab-grid-cell-outflow input').toArray();
-    const values = cells.map(node => parseFloat(node.value.trim()));
+    const values = cells.map(node => stripCurrency(node.value));
     return [cells, values];
   }
 
@@ -90,9 +89,11 @@ export class AutoDistributeSplits extends Feature {
 
   alertCannotDistribute() {
     // eslint-disable-next-line no-alert
-    alert('Please fill in the transaction total and at least one ' +
+    alert(
+      'Please fill in the transaction total and at least one ' +
         'sub-transaction in order to auto-distribute the ' +
-        'remaining amount between sub-transactions');
+        'remaining amount between sub-transactions'
+    );
   }
 
   getRemainingValue(total, subValues) {
@@ -101,20 +102,34 @@ export class AutoDistributeSplits extends Feature {
 
   confirmSubtraction() {
     // eslint-disable-next-line no-alert
-    return window.confirm('Sub-transactions add up to more than the total, ' +
-        'are you sure you want to subtract from them?');
+    return window.confirm(
+      'Sub-transactions add up to more than the total, ' +
+        'are you sure you want to subtract from them?'
+    );
   }
 
-  proportionalValue(total, remaining) {
-    return value => value + value / (total - remaining) * remaining;
+  getUpdatedSubValues(subValues, total, originalRemainingAmount) {
+    const subTotal = total - originalRemainingAmount;
+    let remainingAmountToDistribute = originalRemainingAmount;
+    return subValues.map((subValue, i) => {
+      let proportionOfRemaining = (subValue / subTotal) * originalRemainingAmount;
+      proportionOfRemaining = Math.round(proportionOfRemaining * 100) / 100;
+      const isLastSubValue = i + 1 === subValues.length;
+      const amountToAdd =
+        isLastSubValue &&
+        (proportionOfRemaining === 0 || proportionOfRemaining > remainingAmountToDistribute)
+          ? remainingAmountToDistribute
+          : proportionOfRemaining;
+      remainingAmountToDistribute -= amountToAdd;
+      return Math.round((subValue + amountToAdd) * 100) / 100;
+    });
   }
 
   adjustValues(subCells, newSubValues) {
     subCells.forEach((cell, i) => {
-      $(cell).val(actualNumber(newSubValues[i])
-        ? (Math.round(newSubValues[i] * 100) / 100).toFixed(2)
-        : '');
+      $(cell).val(actualNumber(newSubValues[i]) ? formatCurrency(newSubValues[i], true) : '');
       $(cell).trigger('change');
+      $(cell).trigger('blur');
     });
   }
 }

@@ -1,15 +1,21 @@
 /* row */
-body .budget-table .budget-table-row.is-sub-category.is-debt-payment-category .budget-table-cell-available .toolkit-pif-cautious {
-  background-color: #e59100;
+.budget-table-row.is-sub-category.is-debt-payment-category[data-toolkit-pif-assist]
+  .ynab-new-budget-available-number {
+  background-color: var(--budget_balance_warning_background) !important;
+  color: var(--budget_balance_warning_text) !important;
 }
-body .budget-table .budget-table-row.is-sub-category.is-debt-payment-category .budget-table-cell-available .toolkit-pif-cautious:hover {
-  background-color: #c37b00;
+.budget-table-row.is-sub-category.is-debt-payment-category[data-toolkit-pif-assist]
+  .ynab-new-budget-available-number:hover {
+  background-color: var(--budget_balance_warning_background) !important;
+  color: var(--budget_balance_warning_text) !important;
 }
 
 /* inspector */
-body .budget-inspector .budget-inspector-category-overview .inspector-overview-available.toolkit-row-debt-category dt.toolkit-pif-cautious {
-  color: #e59100 !important;
+.budget-inspector[data-toolkit-pif-assist] .inspector-overview-available dt {
+  color: var(--budget_balance_warning_background) !important;
+  color: var(--budget_balance_warning_text) !important;
 }
-body .budget-inspector .budget-inspector-category-overview .inspector-overview-available.toolkit-row-debt-category dd .toolkit-pif-cautious {
-  background: #e59100 !important;
+.budget-inspector[data-toolkit-pif-assist] .ynab-new-budget-available-number {
+  background: var(--budget_balance_warning_background) !important;
+  color: var(--budget_balance_warning_text) !important;
 }

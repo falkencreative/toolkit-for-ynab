@@ -1,49 +1,51 @@
 import { Feature } from 'toolkit/extension/features/feature';
 import { getEmberView } from 'toolkit/extension/utils/ember';
 import { formatCurrency } from 'toolkit/extension/utils/currency';
-import { getCurrentRouteName } from 'toolkit/extension/utils/ynab';
+import { addToolkitEmberHook } from 'toolkit/extension/utils/toolkit';
 
 export class DisplayTotalMonthlyGoals extends Feature {
   shouldInvoke() {
-    return getCurrentRouteName().indexOf('budget') !== -1;
+    return true;
   }
 
   extractCategoryGoalInformation(element) {
-    const emberId = element.id;
-    const viewData = getEmberView(emberId).category;
-
-    const goalType = viewData.get('subCategory.goalType');
-    const monthlyFunding = viewData.get('subCategory.monthlyFunding');
-    const targetBalanceDate = viewData.get('monthlySubCategoryBudgetCalculation.goalTarget');
-
-    let monthlyGoalAmount = 0;
-
-    switch (goalType) {
-      case 'MF': {
-        monthlyGoalAmount = monthlyFunding;
-        break;
-      }
-      case 'TBD': {
-        monthlyGoalAmount = targetBalanceDate;
-        break;
-      }
+    const category = getEmberView(element.id, 'category');
+    if (!category) {
+      return;
     }
 
-    return {
-      monthlyGoalAmount,
-      isChecked: viewData.get('isChecked')
+    const categoryInfo = {
+      monthlyGoalAmount: 0,
+      isChecked: category.get('isChecked'),
     };
+
+    switch (category.goalType) {
+      case ynab.constants.SubCategoryGoalType.MonthlyFunding:
+      case ynab.constants.SubCategoryGoalType.TargetBalanceOnDate:
+        categoryInfo.monthlyGoalAmount = parseInt(category.goalTarget || 0, 10);
+        break;
+      case ynab.constants.SubCategoryGoalType.Needed:
+        categoryInfo.monthlyGoalAmount = parseInt(
+          category.goalTarget || category.goalTargetAmount || 0,
+          10
+        );
+    }
+
+    return categoryInfo;
   }
 
   calculateMonthlyGoals() {
     const categoryGoals = {
       total: 0,
       checkedTotal: 0,
-      checkedCount: 0
+      checkedCount: 0,
     };
 
-    $('.budget-table-row.is-sub-category').each((index, element) => {
+    $('.budget-table-row.is-sub-category').each((_, element) => {
       const categoryGoal = this.extractCategoryGoalInformation(element);
+      if (!categoryGoal) {
+        return;
+      }
 
       categoryGoals.total += categoryGoal.monthlyGoalAmount;
       if (categoryGoal.isChecked) {
@@ -53,15 +55,13 @@ export class DisplayTotalMonthlyGoals extends Feature {
     });
 
     return {
-      amount: categoryGoals.checkedCount > 0
-        ? categoryGoals.checkedTotal
-        : categoryGoals.total,
-      checkedCategoryCount: categoryGoals.checkedCount
+      amount: categoryGoals.checkedCount > 0 ? categoryGoals.checkedTotal : categoryGoals.total,
+      checkedCategoryCount: categoryGoals.checkedCount,
     };
   }
 
   createInspectorElement(goalsAmount) {
-    const currencyClass = (goalsAmount === 0) ? 'zero' : 'positive';
+    const currencyClass = goalsAmount === 0 ? 'zero' : 'positive';
 
     return $(`
       <div class="total-monthly-goals-inspector">
@@ -76,7 +76,7 @@ export class DisplayTotalMonthlyGoals extends Feature {
     `);
   }
 
-  invoke() {
+  addTotalMonthlyGoals(element) {
     const monthlyGoals = this.calculateMonthlyGoals();
 
     $('.total-monthly-goals-inspector').remove();
@@ -86,20 +86,17 @@ export class DisplayTotalMonthlyGoals extends Feature {
       return;
     }
 
-    this.createInspectorElement(monthlyGoals.amount)
-      .insertBefore($('.inspector-quick-budget'));
+    this.createInspectorElement(monthlyGoals.amount).insertBefore(
+      $('.inspector-quick-budget', element)
+    );
   }
 
-  observe(changedNodes) {
-    if (!this.shouldInvoke()) return;
-    if (changedNodes.has('budget-table-row is-sub-category is-checked') ||
-        changedNodes.has('budget-table-row is-sub-category')) {
-      this.invoke();
-    }
-  }
-
-  onRouteChanged() {
-    if (!this.shouldInvoke()) return;
-    this.invoke();
+  invoke() {
+    addToolkitEmberHook(
+      this,
+      'budget/inspector/default-inspector',
+      'didRender',
+      this.addTotalMonthlyGoals
+    );
   }
 }

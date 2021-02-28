@@ -1,10 +1,9 @@
 import { Feature } from 'toolkit/extension/features/feature';
-import { getCurrentRouteName } from 'toolkit/extension/utils/ynab';
+import { isCurrentRouteAccountsPage } from 'toolkit/extension/utils/ynab';
 
 export class ChangeEnterBehavior extends Feature {
   shouldInvoke() {
-    return getCurrentRouteName().indexOf('account') !== -1 &&
-           $('.ynab-grid-body-row.is-adding').length;
+    return isCurrentRouteAccountsPage() && $('.ynab-grid-body-row.is-adding').length;
   }
 
   invoke() {
@@ -30,17 +29,32 @@ export class ChangeEnterBehavior extends Feature {
   }
 
   applyNewEnterBehavior(event) {
+    // This check is added so that there is no conflict with ChangeMemoEnterBehavior
+    if ($(this)[0].getAttribute('data-toolkit-memo-behavior')) return;
     if (event.keyCode === 13) {
       event.preventDefault();
       event.stopPropagation();
 
-      const $saveButton = $('.ynab-grid-actions-buttons .button.button-primary:not(.button-another)');
+      // Added to support CtrlEnterCleared when ChangeEnterBehavior is enabled
+      if (
+        ynabToolKit.options.CtrlEnterCleared === true &&
+        (event.metaKey === true || event.ctrlKey === true)
+      ) {
+        let $markClearedButton = $('.is-adding .ynab-cleared:not(.is-cleared)');
+        if ($markClearedButton.length !== 0) {
+          $markClearedButton[0].click();
+        }
+      }
+
+      const $saveButton = $(
+        '.ynab-grid-actions-buttons .button.button-primary:not(.button-another)'
+      );
       $saveButton.click();
     }
   }
 
   observe(changedNodes) {
-    if (!changedNodes.has('ynab-grid-body')) return;
+    if (!changedNodes.has('ynab-grid-add-rows')) return;
 
     if (this.shouldInvoke()) {
       this.invoke();

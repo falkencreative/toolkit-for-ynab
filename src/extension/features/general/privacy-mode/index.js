@@ -1,9 +1,14 @@
 import { Feature } from 'toolkit/extension/features/feature';
+import { getToolkitStorageKey, setToolkitStorageKey } from 'toolkit/extension/utils/toolkit';
 
 const Settings = {
   AlwaysOn: '1',
-  Toggle: '2'
+  Toggle: '2',
 };
+
+const TEXT_BLUR_FILTER_ID = 'text-blur';
+
+const PRIVACY_TOOLKIT_STORAGE_KEY = 'privacy-mode';
 
 export class PrivacyMode extends Feature {
   injectCSS() {
@@ -21,44 +26,77 @@ export class PrivacyMode extends Feature {
   }
 
   invoke() {
-    let toggle = ynabToolKit.shared.getToolkitStorageKey('privacy-mode');
+    const self = this;
+    let toggle = getToolkitStorageKey(PRIVACY_TOOLKIT_STORAGE_KEY);
     if (typeof toggle === 'undefined') {
-      ynabToolKit.shared.setToolkitStorageKey('privacy-mode', false);
+      setToolkitStorageKey(PRIVACY_TOOLKIT_STORAGE_KEY, false);
+    }
+
+    if (!$(`#${TEXT_BLUR_FILTER_ID}`).length) {
+      $('body').append(this._getBlurSVG());
     }
 
     if (ynabToolKit.options.PrivacyMode === Settings.Toggle) {
-      if (!$('#toolkit-togglePrivacy').length) {
-        $('nav.sidebar.logged-in .sidebar-contents').after('<button id="toolkit-togglePrivacy"><i class="ember-view flaticon stroke lock-1"></i></button>');
-
-        let parent = this;
-        $('body').on('click', 'button#toolkit-togglePrivacy', function () {
-          parent.togglePrivacyMode();
-        });
+      if (!$('#tk-toggle-privacy').length) {
+        $('.sidebar-bottom').prepend(
+          $('<button>', {
+            id: 'tk-toggle-privacy',
+            class: 'tk-toggle-privacy',
+          })
+            .append(
+              $('<i>', {
+                class: 'tk-toggle-privacy__icon flaticon stroke lock-1',
+              })
+            )
+            .click(() => {
+              self.togglePrivacyMode();
+            })
+        );
       }
     } else if (ynabToolKit.options.PrivacyMode === Settings.AlwaysOn) {
-      ynabToolKit.shared.setToolkitStorageKey('privacy-mode', true);
+      setToolkitStorageKey(PRIVACY_TOOLKIT_STORAGE_KEY, true);
     }
 
     this.updatePrivacyMode();
   }
 
-  togglePrivacyMode() {
-    $('button#toolkit-togglePrivacy').toggleClass('active');
+  onRouteChanged() {
+    this.invoke();
+  }
 
-    let toggle = ynabToolKit.shared.getToolkitStorageKey('privacy-mode');
-    ynabToolKit.shared.setToolkitStorageKey('privacy-mode', !toggle);
+  togglePrivacyMode() {
+    $('#tk-toggle-privacy').toggleClass('active');
+
+    let toggle = getToolkitStorageKey(PRIVACY_TOOLKIT_STORAGE_KEY);
+    setToolkitStorageKey(PRIVACY_TOOLKIT_STORAGE_KEY, !toggle);
     this.updatePrivacyMode();
   }
 
   updatePrivacyMode() {
-    let toggle = ynabToolKit.shared.getToolkitStorageKey('privacy-mode');
+    let toggle = getToolkitStorageKey(PRIVACY_TOOLKIT_STORAGE_KEY);
 
     if (toggle) {
-      $('body').addClass('toolkit-privacyMode');
-      $('#toolkit-togglePrivacy i').removeClass('unlock-1').addClass('lock-1');
+      $('body').addClass('tk-privacy-mode');
+      $('#tk-toggle-privacy i')
+        .removeClass('unlock-1')
+        .addClass('lock-1');
     } else {
-      $('body').removeClass('toolkit-privacyMode');
-      $('#toolkit-togglePrivacy i').removeClass('lock-1').addClass('unlock-1');
+      $('body').removeClass('tk-privacy-mode');
+      $('#tk-toggle-privacy i')
+        .removeClass('lock-1')
+        .addClass('unlock-1');
     }
+  }
+
+  _getBlurSVG() {
+    return /* html */ `
+      <svg version="1.1" width="0" height="0">
+        <defs>
+          <filter id="text-blur">
+            <feGaussianBlur stdDeviation="6" result="blur" />
+          </filter>
+        </defs>
+      </svg>
+    `;
   }
 }

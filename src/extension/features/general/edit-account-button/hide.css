@@ -1,11 +1,7 @@
-.nav-account-row:hover .nav-account-name .edit-account-icon {
-	display: none;
+svg.ember-view.svg-icon.edit {
+	visibility: hidden;
 }
 
-.nav-account-row:hover .nav-account-notification .edit-account-icon {
-	display: none;
-}
-
-.nav-account-row .nav-account-name:hover button {
-	max-width: 100%;
+.nav-accounts a.nav-account-row > .nav-account-icons.nav-account-icons-left {
+	pointer-events: none;
 }

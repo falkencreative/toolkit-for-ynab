@@ -1,15 +1,20 @@
 import { Feature } from 'toolkit/extension/features/feature';
-import { getCurrentRouteName } from 'toolkit/extension/utils/ynab';
+import { isCurrentRouteAccountsPage } from 'toolkit/extension/utils/ynab';
+import { controllerLookup } from 'toolkit/extension/utils/ember';
 
 export class EasyTransactionApproval extends Feature {
   initBudgetVersion = true;
+
   initKeyLoop = true;
+
   initClickLoop = true;
+
   watchForKeys = false;
+
   selectedTransactions = undefined;
 
   shouldInvoke() {
-    return getCurrentRouteName().indexOf('account') !== -1;
+    return isCurrentRouteAccountsPage();
   }
 
   observe(changedNodes) {
@@ -21,14 +26,16 @@ export class EasyTransactionApproval extends Feature {
     }
 
     // watch for switch to Accounts section or selection change
-    if (changedNodes.has('ynab-grid-body') ||
+    if (
+      changedNodes.has('ynab-grid-body') ||
       changedNodes.has('ynab-checkbox-button is-checked') ||
-      changedNodes.has('ynab-checkbox-button ')) {
+      changedNodes.has('ynab-checkbox-button ')
+    ) {
       this.invoke();
     }
 
     // disable keydown watch on creation or editing of transactions
-    if (changedNodes.has('accounts-toolbar-edit-transaction ember-view button button-disabled')) {
+    if (changedNodes.has('accounts-toolbar-edit-transaction button button-disabled')) {
       this.watchForKeys = false;
     }
   }
@@ -36,9 +43,9 @@ export class EasyTransactionApproval extends Feature {
   addBudgetVersionIdObserver() {
     var _this = this;
 
-    var applicationController = ynabToolKit.shared.containerLookup('controller:application');
-    applicationController.addObserver('budgetVersionId', function () {
-      Ember.run.scheduleOnce('afterRender', this, function () {
+    var applicationController = controllerLookup('application');
+    applicationController.addObserver('budgetVersionId', function() {
+      Ember.run.scheduleOnce('afterRender', this, function() {
         _this.initKeyLoop = true;
         _this.initClickLoop = true;
       });
@@ -47,13 +54,21 @@ export class EasyTransactionApproval extends Feature {
 
   invoke() {
     // get selected transactions
-    this.selectedTransactions = undefined;
-    var accountController = ynabToolKit.shared.containerLookup('controller:accounts');
-    var visibleTransactionDisplayItems = accountController.get('visibleTransactionDisplayItems');
-    this.selectedTransactions = visibleTransactionDisplayItems.filter(i => i.isChecked && i.get('accepted') === false);
+    this.selectedTransactions = null;
+    const accountController = controllerLookup('accounts');
+    if (!accountController) {
+      return;
+    }
+
+    const visibleTransactionDisplayItems = accountController.get('visibleTransactionDisplayItems');
+    if (visibleTransactionDisplayItems) {
+      this.selectedTransactions = visibleTransactionDisplayItems.filter(
+        i => i.isChecked && i.get('accepted') === false
+      );
+    }
 
     // only watch for keydown if there are selected, unaccepted transactions
-    if (this.selectedTransactions.length > 0) {
+    if (this.selectedTransactions && this.selectedTransactions.length > 0) {
       this.watchForKeys = true;
     }
 
@@ -71,7 +86,7 @@ export class EasyTransactionApproval extends Feature {
   watchForKeyInput() {
     var _this = this;
 
-    $('body').on('keydown', function (e) {
+    $('body').on('keydown', function(e) {
       if ((e.which === 13 || e.which === 65) && _this.watchForKeys) {
         // approve selected transactions when 'a' or 'enter is pressed'
         _this.approveTransactions();
@@ -89,17 +104,18 @@ export class EasyTransactionApproval extends Feature {
     var _this = this;
 
     // call approveTransactions if the notification 'i' icon is right clicked on
-    Ember.run.next(function () {
+    Ember.run.next(function() {
       $('.ynab-grid').off(
         'contextmenu',
         '.ynab-grid-body-row .ynab-grid-cell-notification button.transaction-notification-info',
-        function (event) {
+        function(event) {
           // prevent defaults
           event.preventDefault();
           event.stopPropagation();
 
           // select row
-          $(this).closest('.ynab-grid-body-row')
+          $(this)
+            .closest('.ynab-grid-body-row')
             .find('.ynab-grid-cell-checkbox button:not(.is-checked)')
             .click();
 
@@ -110,13 +126,14 @@ export class EasyTransactionApproval extends Feature {
       $('.ynab-grid').on(
         'contextmenu',
         '.ynab-grid-body-row .ynab-grid-cell-notification button.transaction-notification-info',
-        function (event) {
+        function(event) {
           // prevent defaults
           event.preventDefault();
           event.stopPropagation();
 
           // select row
-          $(this).closest('.ynab-grid-body-row')
+          $(this)
+            .closest('.ynab-grid-body-row')
             .find('.ynab-grid-cell-checkbox button:not(.is-checked)')
             .click();
 
@@ -145,6 +162,8 @@ export class EasyTransactionApproval extends Feature {
     $('body').trigger(keycode2);
 
     // unselect transactions after approval
-    $('.ynab-grid-body-row.is-checked').find('.ynab-grid-cell-checkbox button').click();
+    $('.ynab-grid-body-row.is-checked')
+      .find('.ynab-grid-cell-checkbox button')
+      .click();
   }
 }

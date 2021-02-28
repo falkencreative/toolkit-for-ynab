@@ -2,7 +2,8 @@ require('colors');
 const glob = require('glob');
 const fs = require('fs');
 const path = require('path');
-const defaultFeatures = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'))).defaultFeatures;
+const defaultFeatures = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json')))
+  .defaultFeatures;
 
 const LEAGACY_SETTINGS_PROJECT_DIR = 'src/extension/legacy/features';
 const NEW_SETTINGS_PROJECT_DIR = 'src/extension/features';
@@ -10,96 +11,66 @@ const ALL_SETTINGS_OUTPUT = 'src/core/settings/settings.js';
 const SETTINGS_JSON = 'scripts/settings.json';
 const REQUIRED_SETTINGS = ['name', 'type', 'default', 'section', 'title'];
 
-const legacySettingMap = {
-  AccountsDisplayDensity: 'accountsDisplayDensity',
-  AutoCloseReconcile: 'closeReconcileWindow',
-  BetterScrollbars: 'betterScrollbars',
-  BudgetProgressBars: 'budgetProgressBars',
-  BudgetQuickSwitch: 'budgetQuickSwitch',
-  CategoryActivityPopupWidth: 'categoryActivityPopupWidth',
-  ChangeEnterBehavior: 'changeEnterBehavior',
-  CalendarFirstDay: 'calendarFirstDay',
-  CheckCreditBalances: 'checkCreditBalances',
-  CheckNumbers: 'checkNumbers',
-  ClearSelection: 'accountsClearSelection',
-  ColourBlindMode: 'colourBlindMode',
-  CollapseSideMenu: 'collapseSideMenu',
-  CurrentMonthIndicator: 'currentMonthIndicator',
-  DaysOfBuffering: 'daysOfBuffering',
-  DaysOfBufferingHistoryLookup: 'daysOfBufferingHistoryLookup',
-  EditAccountButton: 'editButtonPosition',
-  EnableRetroCalculator: 'enableRetroCalculator',
-  EmphasizedOutflows: 'accountsEmphasizedOutflows',
-  GoalWarningColor: 'goalWarningColor',
-  GoogleFontsSelector: 'googleFontsSelector',
-  HideAccountBalancesType: 'hideAccountBalancesType',
-  HideAgeOfMoney: 'hideAgeOfMoney',
-  HideHelp: 'hideHelp',
-  ImportNotification: 'importNotification',
-  LargerClickableIcons: 'largerClickableIcons',
-  MonthlyNotesPopupWidth: 'monthlyNotesPopupWidth',
-  NavDisplayDensity: 'navDisplayDensity',
-  Pacing: 'pacing',
-  PrintingImprovements: 'printingImprovements',
-  QuickBudgetWarning: 'warnOnQuickBudget',
-  ReconciledTextColor: 'reconciledTextColor',
-  RemovePositiveHighlight: 'removePositiveHighlight',
-  ResizeInspector: 'resizeInspector',
-  RowHeight: 'accountsRowHeight',
-  RowsHeight: 'budgetRowsHeight',
-  RunningBalance: 'runningBalance',
-  SeamlessBudgetHeader: 'seamlessBudgetHeader',
-  ShowIntercom: 'showIntercom',
-  SplitKeyboardShortcut: 'splitKeyboardShortcut',
-  SquareNegativeMode: 'squareNegativeMode',
-  StealingFromFuture: 'stealingFromNextMonth',
-  StripedRows: 'accountsStripedRows',
-  ToBeBudgetedWarning: 'toBeBudgetedWarning',
-  ToggleMasterCategories: 'collapseExpandBudgetGroups',
-  ToggleSplits: 'toggleSplits'
+const settingMigrationMap = {
+  CategorySoloMode: {
+    oldSettingName: 'ToggleMasterCategories',
+    settingMapping: {
+      true: 'cat-toggle-all',
+    },
+  },
+  AutoEnableRunningBalance: {
+    oldSettingName: 'RunningBalance',
+    settingMapping: {
+      0: false,
+      1: true,
+      2: true,
+    },
+  },
 };
 
 let previousSettings;
 
 function run(callback) {
   previousSettings = new Set();
-  Promise.all([
-    gatherLegacySettings(),
-    gatherNewSettings()
-  ]).then(values => {
-    let validatedSettings = [];
-    let settingsConcatenated = values[0].concat(values[1]);
-    settingsConcatenated.forEach(setting => {
-      if (Array.isArray(setting.setting)) {
-        setting.setting.forEach(subSetting => {
-          let validatedSetting = validateSetting({
-            setting: subSetting,
-            file: setting.file,
-            legacy: setting.legacy
-          });
+  Promise.all([gatherLegacySettings(), gatherNewSettings()])
+    .then(
+      values => {
+        let validatedSettings = [];
+        let settingsConcatenated = values[0].concat(values[1]);
+        settingsConcatenated.forEach(setting => {
+          if (Array.isArray(setting.setting)) {
+            setting.setting.forEach(subSetting => {
+              let validatedSetting = validateSetting({
+                setting: subSetting,
+                file: setting.file,
+                legacy: setting.legacy,
+              });
 
-          if (validatedSetting.hidden !== true) {
-            validatedSettings.push(validatedSetting);
+              if (validatedSetting.hidden !== true) {
+                validatedSettings.push(validatedSetting);
+              }
+            });
+          } else {
+            let validatedSetting = validateSetting(setting);
+
+            if (validatedSetting.hidden !== true) {
+              validatedSettings.push(validatedSetting);
+            }
           }
         });
-      } else {
-        let validatedSetting = validateSetting(setting);
 
-        if (validatedSetting.hidden !== true) {
-          validatedSettings.push(validatedSetting);
-        }
+        let allSettingsFile = generateAllSettingsFile(validatedSettings);
+        fs.writeFile(ALL_SETTINGS_OUTPUT, allSettingsFile, () => {
+          fs.writeFile(SETTINGS_JSON, JSON.stringify(validatedSettings), callback);
+        });
+      },
+      reason => {
+        callback(reason);
       }
+    )
+    .catch(exception => {
+      callback(exception.stack);
     });
-
-    let allSettingsFile = generateAllSettingsFile(validatedSettings);
-    fs.writeFile(ALL_SETTINGS_OUTPUT, allSettingsFile, () => {
-      fs.writeFile(SETTINGS_JSON, JSON.stringify(validatedSettings), callback);
-    });
-  }, reason => {
-    callback(reason);
-  }).catch(exception => {
-    callback(exception.stack);
-  });
 }
 
 function gatherLegacySettings() {
@@ -110,20 +81,22 @@ function gatherLegacySettings() {
       let legacySettingsPromises = [];
 
       files.forEach(file => {
-        legacySettingsPromises.push(new Promise((resolve, reject) => {
-          let setting;
-          const filePath = `${__dirname}/../${file}`;
-          try {
-            setting = require(filePath); // eslint-disable-line global-require
-          } catch (e) {
-            fs.readFile(filePath, 'utf8', (error, data) => {
-              if (error) return reject(error);
-              setting = JSON.parse(data);
-            });
-          }
+        legacySettingsPromises.push(
+          new Promise((resolve, reject) => {
+            let setting;
+            const filePath = `${__dirname}/../${file}`;
+            try {
+              setting = require(filePath); // eslint-disable-line global-require
+            } catch (e) {
+              fs.readFile(filePath, 'utf8', (error, data) => {
+                if (error) return reject(error);
+                setting = JSON.parse(data);
+              });
+            }
 
-          resolve({ file, setting, legacy: true });
-        }));
+            resolve({ file, setting, legacy: true });
+          })
+        );
       });
 
       Promise.all(legacySettingsPromises).then(resolve, reject);
@@ -136,10 +109,12 @@ function gatherNewSettings() {
     glob(path.join(NEW_SETTINGS_PROJECT_DIR, '**', 'settings.js'), (error, files) => {
       if (error) return reject(error);
 
-      resolve(files.map(file => {
-        const setting = require(path.join(__dirname, '..', file)); // eslint-disable-line global-require
-        return { file, setting };
-      }));
+      resolve(
+        files.map(file => {
+          const setting = require(path.join(__dirname, '..', file)); // eslint-disable-line global-require
+          return { file, setting };
+        })
+      );
     });
   });
 }
@@ -153,11 +128,11 @@ function validateSetting(settingObj) {
   }
 
   REQUIRED_SETTINGS.forEach(requiredSetting => {
-    if (typeof featureSettings[requiredSetting] === 'undefined' || featureSettings[requiredSetting] === null) {
-      logFatal(
-        settingFilename,
-        `"${requiredSetting}" is a required setting for all features.`
-      );
+    if (
+      typeof featureSettings[requiredSetting] === 'undefined' ||
+      featureSettings[requiredSetting] === null
+    ) {
+      logFatal(settingFilename, `"${requiredSetting}" is a required setting for all features.`);
     }
   });
 
@@ -182,7 +157,11 @@ function validateSetting(settingObj) {
         );
       }
 
-      if (settingObj.legacy && typeof featureSettings.actions.true === 'undefined' && typeof featureSettings.actions.false === 'undefined') {
+      if (
+        settingObj.legacy &&
+        typeof featureSettings.actions.true === 'undefined' &&
+        typeof featureSettings.actions.false === 'undefined'
+      ) {
         logFatal(
           settingFilename,
           'Checkbox settings must declare an action for "true" or "false" to have any effect.'
@@ -197,10 +176,12 @@ function validateSetting(settingObj) {
         );
       }
       break;
+    case 'color':
+      break;
     default:
       logFatal(
         settingFilename,
-        `type "${featureSettings.type}" is invalid. Allowed types are: "select" and "checkbox"`
+        `type "${featureSettings.type}" is invalid. Allowed types are: "select", "checkbox", and "color"`
       );
   }
 
@@ -212,10 +193,7 @@ function validateActions(settingObj) {
   const settingFilename = settingObj.file;
 
   if (typeof featureSettings.actions === 'undefined') {
-    logFatal(
-      settingFilename,
-      'Setting "actions" is required'
-    );
+    logFatal(settingFilename, 'Setting "actions" is required');
   }
 
   for (const actionKey in featureSettings.actions) {
@@ -276,7 +254,7 @@ function generateAllSettingsFile(allSettings) {
 
 if (typeof window.ynabToolKit === 'undefined') { window.ynabToolKit = {}; }
 
-export const legacySettingMap = ${JSON.stringify(legacySettingMap)};
+export const settingMigrationMap = ${JSON.stringify(settingMigrationMap)};
 export const allToolkitSettings = ${JSON.stringify(allSettings)};
 
 // eslint-disable-next-line quotes, object-curly-spacing, quote-props

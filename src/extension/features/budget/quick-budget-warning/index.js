@@ -1,9 +1,9 @@
 import { Feature } from 'toolkit/extension/features/feature';
-import { getCurrentRouteName } from 'toolkit/extension/utils/ynab';
+import { isCurrentRouteBudgetPage } from 'toolkit/extension/utils/ynab';
 
 export class QuickBudgetWarning extends Feature {
   shouldInvoke() {
-    return getCurrentRouteName().indexOf('budget') > -1;
+    return isCurrentRouteBudgetPage();
   }
 
   invoke() {
@@ -17,7 +17,9 @@ export class QuickBudgetWarning extends Feature {
   confirmClick(event) {
     // if nothing is budgeted, skip the confirmation
     let allZero = true;
-    $('div.budget-table ul.budget-table-row.is-checked li.budget-table-cell-budgeted .currency').each(function () {
+    $(
+      'div.budget-table ul.budget-table-row.is-checked li.budget-table-cell-budgeted .currency'
+    ).each(function() {
       if (!$(this).hasClass('zero')) {
         allZero = false;
       }
@@ -26,7 +28,8 @@ export class QuickBudgetWarning extends Feature {
       return;
     }
 
-    if (!window.confirm('Are you sure you want to budget this amount?')) { // eslint-disable-line no-alert
+    if (!window.confirm('Are you sure you want to budget this amount?')) {
+      // eslint-disable-line no-alert
       event.preventDefault();
       event.stopPropagation();
     }

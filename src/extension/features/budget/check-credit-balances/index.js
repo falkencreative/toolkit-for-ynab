@@ -1,28 +1,27 @@
 import { Feature } from 'toolkit/extension/features/feature';
-import { getAllBudgetMonthsViewModel, getCurrentBudgetDate, getCurrentBudgetMonth, getCurrentRouteName } from 'toolkit/extension/utils/ynab';
+import {
+  getSelectedMonth,
+  getEntityManager,
+  isCurrentRouteBudgetPage,
+} from 'toolkit/extension/utils/ynab';
+import { formatCurrency } from 'toolkit/extension/utils/currency';
+import { getEmberView } from 'toolkit/extension/utils/ember';
+import { l10n } from 'toolkit/extension/utils/toolkit';
 
 export class CheckCreditBalances extends Feature {
-  budgetView = null;
-
   injectCSS() {
     return require('./index.css');
   }
 
   shouldInvoke() {
-    return getCurrentRouteName().indexOf('budget') !== -1;
+    return isCurrentRouteBudgetPage();
   }
 
   invoke() {
-    if (this.currentYear === 0 || this.currentMonth === 0) {
-      this.onMonthChanged(getCurrentBudgetMonth());
-    }
+    const today = ynab.utilities.DateWithoutTime.createForToday();
 
-    if (this.inCurrentMonth()) {
-      let debtAccounts = this.getDebtAccounts();
-
-      if (debtAccounts !== null) {
-        this.processDebtAccounts(debtAccounts);
-      }
+    if (today.equalsByMonth(getSelectedMonth())) {
+      this.processDebtAccounts();
     } else {
       $('.toolkit-rectify-difference').remove();
     }
@@ -31,17 +30,17 @@ export class CheckCreditBalances extends Feature {
   observe(changedNodes) {
     if (!this.shouldInvoke()) return;
 
-    if (changedNodes.has('navlink-budget active') ||
-        changedNodes.has('budget-table-cell-available-div user-data') ||
-        changedNodes.has('budget-inspector') ||
-        changedNodes.has('budget-table-row is-sub-category is-debt-payment-category is-checked') ||
-        changedNodes.has('budget-header-totals-cell-value user-data')) {
+    if (
+      changedNodes.has('budget-number user-data') ||
+      changedNodes.has('navlink-budget active') ||
+      changedNodes.has('budget-inspector') ||
+      changedNodes.has(
+        'budget-table-row js-budget-table-row is-sub-category is-debt-payment-category is-checked'
+      ) ||
+      changedNodes.has('budget-header-totals-cell-value user-data')
+    ) {
       this.invoke();
     }
-  }
-
-  onBudgetChanged() {
-    this.budgetView = null;
   }
 
   onRouteChanged() {
@@ -50,52 +49,51 @@ export class CheckCreditBalances extends Feature {
     this.invoke();
   }
 
-  inCurrentMonth() { // check for current month or future month
-    let today = new Date();
-    let budgetDate = getCurrentBudgetDate();
+  getDebtCategories() {
+    const entityManager = getEntityManager();
+    const debtMasterCategory = entityManager.masterCategoriesCollection.find(c => {
+      return c.get('internalName') === ynab.constants.InternalCategories.DebtPaymentMasterCategory;
+    });
 
-    // check for current month or future month
-    // must subtract 1 from budget month because the Date object is zero based.
-    return budgetDate.month - 1 >= today.getMonth() && budgetDate.year >= today.getYear();
-  }
-
-  getDebtAccounts() {
-    // After using Budget Quick Switch, budgetView needs to be reset to the new budget. The try catch construct is necessary
-    // because this function can be called several times during the budget switch process.
-    if (this.budgetView === null || this.budgetView.categoriesViewModel === null) {
-      try {
-        this.budgetView = getAllBudgetMonthsViewModel();
-      } catch (e) {
-        return null;
-      }
-    }
-
-    let categoryEntityId = this.budgetView
-      .categoriesViewModel.debtPaymentMasterCategory.entityId;
-
-    let debtAccounts = this.budgetView
-      .categoriesViewModel.subCategoriesCollection
-      .findItemsByMasterCategoryId(categoryEntityId);
+    const debtAccounts = getEntityManager()
+      .getAllSubCategories()
+      .filter(c => {
+        return (
+          !c.get('isTombstone') && c.get('masterCategoryId') === debtMasterCategory.get('entityId')
+        );
+      });
 
     return debtAccounts || [];
   }
 
-  processDebtAccounts(debtAccounts) {
+  processDebtAccounts() {
+    const debtCategories = this.getDebtCategories();
     let foundButton = false;
-    let _this = this;
-    debtAccounts.forEach(function (a) {
-      // Not sure why but sometimes on a reload (F5 or CTRL-R) of YNAB, the accountId field is null which if not handled
-      // throws an error and kills the feature.
-      if (a.accountId !== null) {
-        let account = _this.budgetView
-          .sidebarViewModel.accountCalculationsCollection
-          .findItemByAccountId(a.accountId);
-        let currentMonth = moment(ynabToolKit.shared.parseSelectedMonth()).format('YYYY-MM');
-        let balance = account.clearedBalance + account.unclearedBalance;
-        let monthlyBudget = _this.budgetView
-          .monthlySubCategoryBudgetCalculationsCollection
-          .findItemByEntityId('mcbc/' + currentMonth + '/' + a.entityId);
 
+    debtCategories.forEach(debtCategory => {
+      const {
+        accountCalculationsCollection,
+        monthlySubCategoryBudgetCalculationsCollection,
+      } = getEntityManager();
+
+      // Not sure why but sometimes on a reload (F5 or CTRL-R) of YNAB, the accountId field
+      // is null which if not handled throws an error and kills the feature.
+      if (debtCategory.accountId !== null) {
+        const debtCategoryId = debtCategory.get('entityId');
+        const debtAccountId = debtCategory.get('accountId');
+
+        const currentMonth = getSelectedMonth().format('YYYY-MM');
+        const monthlyBudget = monthlySubCategoryBudgetCalculationsCollection.findItemByEntityId(
+          `mcbc/${currentMonth}/${debtCategoryId}`
+        );
+        const calculation = accountCalculationsCollection.find(
+          c => c.get('accountId') === debtAccountId
+        );
+        if (!calculation) {
+          return;
+        }
+
+        const balance = calculation.clearedBalance + calculation.unclearedBalance;
         let available = 0;
         if (monthlyBudget) {
           available = monthlyBudget.balance;
@@ -103,22 +101,22 @@ export class CheckCreditBalances extends Feature {
 
         // ensure that available is >= zero, otherwise don't update
         if (available >= 0) {
-          // If cleared balance is positive, bring available to 0, otherwise
-          // offset by the correct amount
+          // If cleared balance is positive, bring available to 0, otherwise offset by the correct amount
           let difference = 0;
           if (balance > 0) {
-            difference = (available * -1);
+            difference = -available;
           } else {
-            difference = ((available + balance) * -1);
+            difference = -(available + balance);
           }
 
           if (!foundButton) {
-            foundButton = _this.updateInspectorButton(a.name, difference);
+            foundButton = this.updateInspectorButton(debtCategory.name, difference);
           }
 
-          if (balance < 0 && available !== (balance * -1)) {
-            _this.updateRow(a.name);
-            _this.updateInspectorStyle(a.name);
+          if (balance < 0 && available !== balance * -1) {
+            this.addWarning(debtCategoryId);
+          } else {
+            this.removeWarning(debtCategoryId);
           }
         }
       }
@@ -129,39 +127,37 @@ export class CheckCreditBalances extends Feature {
     }
   }
 
-  updateRow(name) {
-    let rows = $('.is-sub-category.is-debt-payment-category');
-    rows.each(function () {
-      let accountName = $(this).find('.budget-table-cell-name div.button-truncate')
-        .prop('title')
-        .match(/.[^\n]*/)[0]; // strip the Note string
+  addWarning(debtCategoryId) {
+    const debtRowElement = document.querySelector(`[data-entity-id="${debtCategoryId}"]`);
+    if (debtRowElement) {
+      debtRowElement.setAttribute('data-toolkit-pif-assist', 'true');
+    }
 
-      if (name === accountName) {
-        let categoryBalance = $(this).find('.budget-table-cell-available-div .user-data.currency');
-        categoryBalance.removeClass('positive zero');
-        if (!categoryBalance.hasClass('negative')) {
-          $(this).find('.budget-table-cell-available-div .user-data.currency').addClass('cautious toolkit-pif-cautious');
-        }
-      }
-    });
+    const inspectorElement = document.querySelector('.budget-inspector');
+    if (inspectorElement) {
+      inspectorElement.setAttribute('data-toolkit-pif-assist', 'true');
+    }
   }
 
-  updateInspectorStyle(name) {
-    let inspectorName = $('.inspector-category-name.user-data').text().trim();
-    if (name === inspectorName) {
-      let inspectorBalance = $('.inspector-overview-available .user-data .user-data.currency');
-      inspectorBalance.removeClass('positive zero');
-      if (!inspectorBalance.hasClass('negative')) {
-        $('.inspector-overview-available .user-data .user-data.currency, .inspector-overview-available dt').addClass('cautious toolkit-pif-cautious');
-      }
+  removeWarning(debtCategoryId) {
+    const debtRowElement = document.querySelector(`[data-entity-id="${debtCategoryId}"]`);
+    if (debtRowElement) {
+      debtRowElement.removeAttribute('data-toolkit-pif-assist');
+    }
+
+    const inspectorElement = document.querySelector('.budget-inspector');
+    if (inspectorElement) {
+      inspectorElement.removeAttribute('data-toolkit-pif-assist', 'true');
     }
   }
 
   updateInspectorButton(name, difference) {
-    let inspectorName = $('.inspector-category-name.user-data').text().trim();
+    let inspectorName = $('.inspector-category-name.user-data')
+      .text()
+      .trim();
 
     if (name && name === inspectorName) {
-      let fDifference = ynabToolKit.shared.formatCurrency(difference);
+      let fDifference = formatCurrency(difference);
       let positive = '';
       if (ynab.unformat(difference) >= 0) {
         positive = '+';
@@ -170,15 +166,8 @@ export class CheckCreditBalances extends Feature {
       let button = $('.toolkit-rectify-difference');
       if (!button.length) {
         button = $('<a>', {
-          class: 'budget-inspector-button toolkit-rectify-difference'
-        })
-          .css({
-            'text-align': 'center',
-            'line-height': '30px',
-            display: 'block',
-            cursor: 'pointer'
-          })
-          .click(this.updateCreditBalances);
+          class: 'budget-inspector-button toolkit-rectify-difference',
+        }).on('click', this.updateCreditBalances);
 
         $('.inspector-quick-budget').append(button);
       }
@@ -187,10 +176,14 @@ export class CheckCreditBalances extends Feature {
         .data('name', name)
         .data('difference', difference)
         .empty()
-        .append(((ynabToolKit.l10nData && ynabToolKit.l10nData['toolkit.checkCreditBalances']) || 'Rectify Difference:'))
-        .append(' ' + positive)
-        .append($('<strong>', { class: 'user-data', title: fDifference })
-          .append(ynabToolKit.shared.appendFormattedCurrencyHtml($('<span>', { class: 'user-data currency zero' }), difference)));
+        .append(l10n('toolkit.checkCreditBalances', 'Rectify Difference'))
+        .append(
+          $('<strong>', { class: 'user-data', title: fDifference }).append(
+            $('<span>', { class: 'user-data currency zero' }).text(
+              `${positive}${formatCurrency(difference)}`
+            )
+          )
+        );
 
       if (difference !== 0) {
         button.removeAttr('disabled');
@@ -206,8 +199,13 @@ export class CheckCreditBalances extends Feature {
   updateCreditBalances() {
     if (ynabToolKit.options.QuickBudgetWarning) {
       // no need to confirm quick budget if zero budgeted
-      if (!$('div.budget-table ul.budget-table-row.is-checked li.budget-table-cell-budgeted .currency').hasClass('zero')) {
-        if (!window.confirm('Are you sure you want to budget this amount?')) { // eslint-disable-line no-alert
+      if (
+        !$(
+          'div.budget-table ul.budget-table-row.is-checked li.budget-table-cell-budgeted .currency'
+        ).hasClass('zero')
+      ) {
+        if (!window.confirm('Are you sure you want to budget this amount?')) {
+          // eslint-disable-line no-alert
           return;
         }
       }
@@ -217,27 +215,25 @@ export class CheckCreditBalances extends Feature {
     let difference = $(this).data('difference');
     let debtPaymentCategories = $('.is-debt-payment-category.is-sub-category');
 
-    $(debtPaymentCategories).each(function () {
-      let accountName = $(this).find('.budget-table-cell-name div.button-truncate')
-        .prop('title')
-        .match(/.[^\n]*/)[0];
+    $(debtPaymentCategories).each(function() {
+      let view = getEmberView(this.id);
+      if (!view || !view.category) {
+        return;
+      }
+
+      const accountName = view.category.displayName;
       if (accountName === name) {
-        let input = $(this).find('.budget-table-cell-budgeted div.currency-input').click()
+        let input = $(this)
+          .find('.budget-table-cell-budgeted div.ynab-new-currency-input')
+          .click()
           .find('input');
 
-        let oldValue = input.val();
-
-        // If nothing is budgeted, the input will be empty
-        oldValue = oldValue || 0;
-
-        // YNAB stores values *1000 for decimal places, so just
-        // multiple by 1000 to get the actual amount.
-        let newValue = (ynab.unformat(oldValue) * 1000 + difference);
+        let newValue = view.category.budgeted + difference;
 
         // format the calculated value back to selected number format
         input.val(ynab.formatCurrency(newValue));
 
-        if (ynabToolKit.options.QuickBudgetWarning === 0) {
+        if (!ynabToolKit.options.QuickBudgetWarning) {
           // only seems to work if the confirmation doesn't pop up?
           // haven't figured out a way to properly blur otherwise
           input.blur();

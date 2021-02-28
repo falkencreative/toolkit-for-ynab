@@ -1,48 +1,53 @@
 import { Feature } from 'toolkit/extension/features/feature';
-import { getCurrentRouteName } from 'toolkit/extension/utils/ynab';
+import { addToolkitEmberHook } from 'toolkit/extension/utils/toolkit';
 
 export class SwapClearedFlagged extends Feature {
-  injectCSS() {
-    return require('./index.css');
-  }
-
   shouldInvoke() {
-    return getCurrentRouteName().indexOf('account') > -1;
+    return true;
   }
 
   invoke() {
-    let flags = $('.ynab-grid-cell-flag');
-    let cleared = $('.ynab-grid-cell-cleared');
+    const rows = [
+      'register/grid-header',
+      'register/grid-sub',
+      'register/grid-row',
+      'register/grid-scheduled',
+      'register/grid-scheduled-sub',
+      'register/grid-actions',
+      'register/grid-pending',
+      'register/grid-split',
+      'register/grid-edit',
+    ];
 
-    for (var i = 0; i < flags.length; i += 1) {
-      // If not swapped
-      if (this.getChildNumber(cleared[i]) - this.getChildNumber(flags[i]) > 0) {
-        this.swapElements(flags[i], cleared[i]);
-      }
-    }
+    addToolkitEmberHook(this, 'register/grid-header', 'didRender', swapColumns);
+
+    rows.forEach(key => {
+      addToolkitEmberHook(this, key, 'didInsertElement', swapColumns);
+    });
+  }
+}
+
+function swapColumns(element) {
+  const clearedColumn = element.querySelector('.ynab-grid-cell-cleared');
+  const flagColumn = element.querySelector('.ynab-grid-cell-flag');
+  if (
+    !clearedColumn ||
+    !flagColumn ||
+    clearedColumn.classList.contains('tk-swapped') ||
+    flagColumn.classList.contains('tk-swapped')
+  ) {
+    return;
   }
 
-  observe(changedNodes) {
-    if (!this.shouldInvoke()) {
-      return;
-    }
-
-    if (changedNodes.has('ynab-grid-body')) {
-      this.invoke();
-    }
+  const beforeClearedColumn = clearedColumn.previousElementSibling;
+  const beforeFlagColumn = flagColumn.previousElementSibling;
+  if (!beforeClearedColumn || !beforeFlagColumn) {
+    return;
   }
 
-  swapElements(elm1, elm2) {
-    let parent1 = elm1.parentNode;
-    let next1 = elm1.nextSibling;
-    let parent2 = elm2.parentNode;
-    let next2 = elm2.nextSibling;
+  clearedColumn.classList.add('tk-swapped');
+  flagColumn.classList.add('tk-swapped');
 
-    parent1.insertBefore(elm2, next1);
-    parent2.insertBefore(elm1, next2);
-  }
-
-  getChildNumber(node) {
-    return Array.prototype.indexOf.call(node.parentNode.childNodes, node);
-  }
+  beforeClearedColumn.after(flagColumn);
+  beforeFlagColumn.after(clearedColumn);
 }

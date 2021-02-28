@@ -1,34 +1,56 @@
+import * as React from 'react';
+import { componentPrepend } from 'toolkit/extension/utils/react';
 import { Feature } from 'toolkit/extension/features/feature';
-import { controllerLookup, getRouter } from 'toolkit/extension/utils/ember';
+import { BudgetListItem } from './components/budget-list-item';
+import { controllerLookup } from 'toolkit/extension/utils/ember';
+import { addToolkitEmberHook } from 'toolkit/extension/utils/toolkit';
 
 export class BudgetQuickSwitch extends Feature {
-  populateBudgetList() {
-    const applicationController = controllerLookup('application');
-    let currentBudgetId = applicationController.get('activeBudgetVersion').get('entityId');
-    let $openBudgetListItem = $('.modal-select-budget').find('.modal-select-budget-open').parent();
-
-    ynab.YNABSharedLib.getCatalogViewModel_UserViewModel().then(({ userBudgetDisplayItems }) => {
-      userBudgetDisplayItems.filter(budget => !budget.get('isTombstone')).forEach((budget) => {
-        const budgetVersionId = budget.get('budgetVersionId');
-        const budgetVersionName = budget.get('budgetVersionName');
-
-        if (budgetVersionId === currentBudgetId) return;
-
-        const budgetListItem = $('<li>').append($('<button>', { text: budgetVersionName }).prepend($('<i>', {
-          class: 'flaticon stroke mail-1'
-        }))).click(() => {
-          const router = getRouter();
-          router.send('openBudget', budgetVersionId, budgetVersionName);
-        });
-
-        $openBudgetListItem.after(budgetListItem);
-      });
-    });
+  shouldInvoke() {
+    return true;
   }
 
-  observe(changedNodes) {
-    if (changedNodes.has('ynab-u modal-popup modal-select-budget ember-view modal-overlay active')) {
-      this.populateBudgetList();
+  invoke() {
+    addToolkitEmberHook(this, 'settings-menu', 'didRender', this.injectQuickSwitch);
+  }
+
+  injectQuickSwitch(element) {
+    if (element.querySelector('#tk-quick-switch') !== null) {
+      return;
     }
+
+    const modalList = $('.modal-list', element)[0];
+    let activeBudgetVersionId = controllerLookup('application').get('budgetVersionId');
+
+    ynab.YNABSharedLib.getCatalogViewModel_UserViewModel().then(({ userBudgetDisplayItems }) => {
+      userBudgetDisplayItems
+        .filter(budget => {
+          return (
+            !budget.get('isTombstone') && budget.get('budgetVersionId') !== activeBudgetVersionId
+          );
+        })
+        .forEach((budget, i) => {
+          const budgetVersionName = budget.get('budgetVersionName');
+          const budgetVersionId = budget.get('budgetVersionId');
+
+          if (i === 0) {
+            componentPrepend(
+              <li id="tk-quick-switch">
+                <hr />
+              </li>,
+              modalList
+            );
+          }
+
+          componentPrepend(
+            <BudgetListItem
+              key={budget.get('budgetVersionId')}
+              budgetVersionId={budgetVersionId}
+              budgetVersionName={budgetVersionName}
+            />,
+            modalList
+          );
+        });
+    });
   }
 }

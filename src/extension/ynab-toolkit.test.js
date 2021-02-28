@@ -11,13 +11,15 @@ const setup = (setupOptions = {}) => {
   const options = {
     initialize: true,
     sendBootstrap: false,
-    ...setupOptions
+    ...setupOptions,
   };
 
   let messageCallback;
-  const addEventListenerSpy = jest.spyOn(window, 'addEventListener').mockImplementation((event, callback) => {
-    messageCallback = callback;
-  });
+  const addEventListenerSpy = jest
+    .spyOn(window, 'addEventListener')
+    .mockImplementation((event, callback) => {
+      messageCallback = callback;
+    });
 
   const postMessageSpy = jest.spyOn(window, 'postMessage');
   const callMessageListener = (...args) => {
@@ -29,8 +31,8 @@ const setup = (setupOptions = {}) => {
     ynabToolkit.initializeToolkit();
   }
 
-  const toolkitBootstrap = { options: {} };
-  allToolkitSettings.forEach((setting) => {
+  const toolkitBootstrap = { hookedComponents: new Set(), options: {} };
+  allToolkitSettings.forEach(setting => {
     toolkitBootstrap.options[setting.name] = false;
   });
 
@@ -39,8 +41,8 @@ const setup = (setupOptions = {}) => {
       source: window,
       data: {
         type: TOOLKIT_BOOTSTRAP_MESSAGE,
-        ynabToolKit: toolkitBootstrap
-      }
+        ynabToolKit: toolkitBootstrap,
+      },
     });
   }
 
@@ -49,7 +51,7 @@ const setup = (setupOptions = {}) => {
     callMessageListener,
     postMessageSpy,
     toolkitBootstrap,
-    ynabToolkit
+    ynabToolkit,
   };
 };
 
@@ -72,7 +74,7 @@ describe('YNABToolkit', () => {
     it('should postMessage the toolkit loaded message', () => {
       const { postMessageSpy, ynabToolkit } = setup({ initialize: false });
       ynabToolkit.initializeToolkit();
-      expect(postMessageSpy).toHaveBeenCalledWith(TOOLKIT_LOADED_MESSAGE, '*');
+      expect(postMessageSpy).toHaveBeenCalledWith({ type: TOOLKIT_LOADED_MESSAGE }, '*');
     });
   });
 
